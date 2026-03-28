@@ -1,0 +1,17 @@
+services:
+  kerrigand:
+    build:
+      context: .
+      dockerfile: contrib/containers/docker/Dockerfile
+    container_name: kerrigand
+    restart: unless-stopped
+    ports:
+      - "7120:7120"
+      - "7121:7121"
+    volumes:
+      - kerrigan-data:/home/kerrigan/.kerrigan
+      # Mount a config file:
+      # - ./kerrigan.conf:/home/kerrigan/.kerrigan/kerrigan.conf:ro
+
+volumes:
+  kerrigan-data:

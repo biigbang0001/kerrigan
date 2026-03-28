@@ -1,0 +1,44 @@
+# Kerrigan configuration file
+# See doc/kerrigan-conf.md for full documentation.
+# Lines beginning with # are comments.
+
+# --- Network ---
+# Run on testnet (default: mainnet)
+#testnet=1
+
+# --- RPC ---
+rpcuser=CHANGEME
+rpcpassword=CHANGEME
+# Restrict RPC to localhost
+rpcallowip=127.0.0.1
+
+# --- Per-Algo RPC Ports (for pool operators) ---
+# Each port serves getblocktemplate for one algorithm only.
+# See doc/pool-integration.md for details.
+#rpcalgoport=x11:1100
+#rpcalgoport=kawpow:5700
+#rpcalgoport=equihash200:2009
+#rpcalgoport=equihash192:1927
+
+# Pool payout address (used with getblocktemplate pooladdress param)
+#pooladdress=YOUR_KERRIGAN_ADDRESS
+
+# --- Indexing ---
+# Required for explorers and some pool software
+txindex=1
+
+# --- Connections ---
+#maxconnections=125
+#listen=1
+
+# --- Masternode ---
+#masternodeblsprivkey=YOUR_BLS_PRIVATE_KEY
+
+# --- Hashrate Estimation ---
+# Per-algo block lookback for getmininginfo/getnetworkhashps (default: 23, ~3 hours)
+# Higher values smooth variance, lower values respond faster.
+#hashrateavgblocks=23
+
+# --- Logging ---
+# Enable debug logging (categories: net, mempool, hmp, rpc, etc.)
+#debug=0

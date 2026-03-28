@@ -1,0 +1,33 @@
+# /etc/conf.d/kerrigand: config file for /etc/init.d/kerrigand
+
+# Config file location
+#KERRIGAND_CONFIGFILE="/etc/kerrigan/kerrigan.conf"
+
+# What directory to write pidfile to?  (created and owned by $KERRIGAND_USER)
+#KERRIGAND_PIDDIR="/var/run/kerrigand"
+
+# What filename to give the pidfile
+#KERRIGAND_PIDFILE="${KERRIGAND_PIDDIR}/kerrigand.pid"
+
+# Where to write kerrigand data (be mindful that the blockchain is large)
+#KERRIGAND_DATADIR="/var/lib/kerrigand"
+
+# User and group to own kerrigand process
+#KERRIGAND_USER="kerrigan"
+#KERRIGAND_GROUP="kerrigan"
+
+# Path to kerrigand executable
+#KERRIGAND_BIN="/usr/bin/kerrigand"
+
+# Nice value to run kerrigand under
+#KERRIGAND_NICE=0
+
+# Additional options (avoid -conf and -datadir, use flags above)
+#KERRIGAND_OPTS=""
+
+# The timeout in seconds OpenRC will wait for kerrigand to terminate
+# after a SIGTERM has been raised.
+# Note that this will be mapped as argument to start-stop-daemon's
+# '--retry' option, which means you can specify a retry schedule
+# here. For more information see man 8 start-stop-daemon.
+KERRIGAND_SIGTERM_TIMEOUT=60

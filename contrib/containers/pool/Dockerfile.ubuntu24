@@ -1,0 +1,36 @@
+# Build kerrigand on Ubuntu 24.04 (Noble)
+# Produces: /kerrigan/src/kerrigand, /kerrigan/src/kerrigan-cli
+#
+# Usage:
+#   docker build -f contrib/containers/pool/Dockerfile.ubuntu24 -t kerrigan-build:noble .
+#   docker run --rm -v $(pwd)/out:/out kerrigan-build:noble cp /kerrigan/src/kerrigand /kerrigan/src/kerrigan-cli /out/
+
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && \
+    apt-get install -y \
+        build-essential libtool autotools-dev automake pkg-config \
+        bsdmainutils bison python3 curl cmake \
+        libevent-dev libboost-dev libsqlite3-dev \
+        libgmp-dev libsodium-dev libzmq3-dev \
+        libminiupnpc-dev libnatpmp-dev \
+        libbacktrace-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+# Rust + cxxbridge
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+RUN cargo install cxxbridge-cmd --version 1.0.186
+
+COPY . /kerrigan
+WORKDIR /kerrigan
+
+RUN ./autogen.sh && \
+    ./configure \
+        --without-gui \
+        --disable-wallet \
+        --disable-tests \
+        --disable-bench && \
+    make -j$(nproc)

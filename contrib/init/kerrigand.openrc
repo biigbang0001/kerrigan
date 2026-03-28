@@ -1,0 +1,93 @@
+#!/sbin/openrc-run
+
+# backward compatibility for existing gentoo layout
+#
+if [ -d "/var/lib/kerrigan/.kerrigan" ]; then
+	KERRIGAND_DEFAULT_DATADIR="/var/lib/kerrigan/.kerrigan"
+else
+	KERRIGAND_DEFAULT_DATADIR="/var/lib/kerrigand"
+fi
+
+KERRIGAND_CONFIGFILE=${KERRIGAND_CONFIGFILE:-/etc/kerrigan/kerrigan.conf}
+KERRIGAND_PIDDIR=${KERRIGAND_PIDDIR:-/var/run/kerrigand}
+KERRIGAND_PIDFILE=${KERRIGAND_PIDFILE:-${KERRIGAND_PIDDIR}/kerrigand.pid}
+KERRIGAND_DATADIR=${KERRIGAND_DATADIR:-${KERRIGAND_DEFAULT_DATADIR}}
+KERRIGAND_USER=${KERRIGAND_USER:-kerrigan}
+KERRIGAND_GROUP=${KERRIGAND_GROUP:-kerrigan}
+KERRIGAND_BIN=${KERRIGAND_BIN:-/usr/bin/kerrigand}
+KERRIGAND_NICE=${KERRIGAND_NICE:-${NICELEVEL:-0}}
+KERRIGAND_OPTS="${KERRIGAND_OPTS:-}"
+
+name="Kerrigan Core Daemon"
+description="Kerrigan cryptocurrency P2P network daemon"
+
+command="/usr/bin/kerrigand"
+command_args="-pid=\"${KERRIGAND_PIDFILE}\" \
+		-conf=\"${KERRIGAND_CONFIGFILE}\" \
+		-datadir=\"${KERRIGAND_DATADIR}\" \
+		-daemon \
+		${KERRIGAND_OPTS}"
+
+required_files="${KERRIGAND_CONFIGFILE}"
+start_stop_daemon_args="-u ${KERRIGAND_USER} \
+			-N ${KERRIGAND_NICE} -w 2000"
+pidfile="${KERRIGAND_PIDFILE}"
+
+# The retry schedule to use when stopping the daemon. Could be either
+# a timeout in seconds or multiple signal/timeout pairs (like
+# "SIGKILL/180 SIGTERM/300")
+retry="${KERRIGAND_SIGTERM_TIMEOUT}"
+
+depend() {
+	need localmount net
+}
+
+# verify
+# 1) that the datadir exists and is writable (or create it)
+# 2) that a directory for the pid exists and is writable
+# 3) ownership and permissions on the config file
+start_pre() {
+	checkpath \
+	-d \
+	--mode 0750 \
+	--owner "${KERRIGAND_USER}:${KERRIGAND_GROUP}" \
+	"${KERRIGAND_DATADIR}"
+
+	checkpath \
+	-d \
+	--mode 0755 \
+	--owner "${KERRIGAND_USER}:${KERRIGAND_GROUP}" \
+	"${KERRIGAND_PIDDIR}"
+
+	checkpath -f \
+	-o "${KERRIGAND_USER}:${KERRIGAND_GROUP}" \
+	-m 0660 \
+	"${KERRIGAND_CONFIGFILE}"
+
+	checkconfig || return 1
+}
+
+checkconfig()
+{
+	if grep -qs '^rpcuser=' "${KERRIGAND_CONFIGFILE}" && \
+		! grep -qs '^rpcpassword=' "${KERRIGAND_CONFIGFILE}" ; then
+		eerror ""
+		eerror "ERROR: You must set a secure rpcpassword to run kerrigand."
+		eerror "The setting must appear in ${KERRIGAND_CONFIGFILE}"
+		eerror ""
+		eerror "This password is security critical to securing wallets "
+		eerror "and must not be the same as the rpcuser setting."
+		eerror "You can generate a suitable random password using the following "
+		eerror "command from the shell:"
+		eerror ""
+		eerror "bash -c 'tr -dc a-zA-Z0-9 < /dev/urandom | head -c32 && echo'"
+		eerror ""
+		eerror "It is recommended that you also set alertnotify so you are "
+		eerror "notified of problems:"
+		eerror ""
+		eerror "ie: alertnotify=echo %%s | mail -s \"Kerrigan Core Alert\"" \
+			"admin@foo.com"
+		eerror ""
+		return 1
+	fi
+}

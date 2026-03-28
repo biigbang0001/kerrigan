@@ -1,0 +1,44 @@
+# Build kerrigand on Ubuntu 20.04 (Focal)
+# Produces: /kerrigan/src/kerrigand, /kerrigan/src/kerrigan-cli
+#
+# Usage:
+#   docker build -f contrib/containers/pool/Dockerfile.ubuntu20 -t kerrigan-build:focal .
+#   docker run --rm -v $(pwd)/out:/out kerrigan-build:focal cp /kerrigan/src/kerrigand /kerrigan/src/kerrigan-cli /out/
+
+FROM ubuntu:20.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# GCC 11 from PPA (GCC 9 default is too old for C++20)
+RUN apt-get update && \
+    apt-get install -y software-properties-common && \
+    add-apt-repository -y ppa:ubuntu-toolchain-r/test && \
+    apt-get update && \
+    apt-get install -y \
+        gcc-11 g++-11 \
+        build-essential libtool autotools-dev automake pkg-config \
+        bsdmainutils bison python3 curl cmake \
+        libevent-dev libboost-dev libsqlite3-dev \
+        libgmp-dev libsodium-dev libzmq3-dev \
+        libminiupnpc-dev libnatpmp-dev && \
+    update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 100 && \
+    update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-11 100 && \
+    rm -rf /var/lib/apt/lists/*
+
+# Rust + cxxbridge
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+RUN cargo install cxxbridge-cmd --version 1.0.186
+
+COPY . /kerrigan
+WORKDIR /kerrigan
+
+RUN ./autogen.sh && \
+    ./configure \
+        CC=gcc-11 CXX=g++-11 \
+        --without-gui \
+        --disable-wallet \
+        --disable-tests \
+        --disable-bench \
+        --disable-stacktraces && \
+    make -j$(nproc)
