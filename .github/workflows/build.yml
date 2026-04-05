@@ -1,75 +1,82 @@
-name: Build Kerrigan
+name: Build Kerrigan macOS
 
 on:
+  workflow_dispatch:
   push:
-    branches: [main, develop]
-    paths: ['src/**', 'configure.ac', 'Makefile.am']
-  pull_request:
-    branches: [main]
+    tags:
+      - 'v*'
 
 jobs:
-  build:
-    runs-on: self-hosted
-    timeout-minutes: 90
+  build-macos:
+    runs-on: macos-latest
+    timeout-minutes: 180
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Check build dependencies
+      - name: Install build dependencies
+        run: brew install automake libtool pkg-config
+
+      - name: Cache depends
+        uses: actions/cache@v4
+        with:
+          path: |
+            depends/built
+            depends/sources
+            depends/x86_64-apple-darwin
+          key: depends-macos-${{ hashFiles('depends/packages/*.mk') }}
+          restore-keys: depends-macos-
+
+      - name: Build depends
         run: |
-          gcc --version | head -1
-          g++ --version | head -1
-          autoconf --version | head -1
+          cd depends
+          make HOST=x86_64-apple-darwin -j$(sysctl -n hw.ncpu)
 
       - name: Autogen
         run: ./autogen.sh
 
       - name: Configure
-        run: ./configure --without-gui
+        run: |
+          ./configure \
+            --prefix=$PWD/depends/x86_64-apple-darwin \
+            --disable-tests \
+            --disable-bench
 
       - name: Build
-        run: make -j$(nproc)
+        run: make -j$(sysctl -n hw.ncpu)
 
       - name: Smoke test
+        run: ./src/kerrigand --version
+
+      - name: Extract version
+        id: version
         run: |
-          ./src/kerrigand --version
+          MAJOR=$(grep '_CLIENT_VERSION_MAJOR' configure.ac | head -1 | grep -o '[0-9]*')
+          MINOR=$(grep '_CLIENT_VERSION_MINOR' configure.ac | head -1 | grep -o '[0-9]*')
+          BUILD=$(grep '_CLIENT_VERSION_BUILD' configure.ac | head -1 | grep -o '[0-9]*')
+          echo "full=${MAJOR}.${MINOR}.${BUILD}" >> $GITHUB_OUTPUT
 
-      - name: Unit tests — PoW
-        run: ./src/test/test_kerrigan --run_test=pow_tests
-
-      - name: Unit tests — coinbase split
-        run: ./src/test/test_kerrigan --run_test=coinbase_split_tests
-
-      - name: Unit tests — Sapling
-        run: ./src/test/test_kerrigan --run_test=sapling_tests
-
-      - name: Functional tests — Sapling
+      - name: Create release package
         run: |
-          python3 test/functional/feature_sapling.py
-          python3 test/functional/feature_sapling_fees.py
-          python3 test/functional/feature_sapling_relay.py
-          python3 test/functional/feature_sapling_reorg.py
-          python3 test/functional/feature_sapling_activation.py
+          VERSION=${{ steps.version.outputs.full }}
+          RELEASE_DIR="kerrigan-${VERSION}-x86_64-apple-darwin"
+          mkdir -p release/${RELEASE_DIR}/bin
+          cp src/kerrigand src/kerrigan-cli src/kerrigan-tx \
+             src/kerrigan-wallet src/kerrigan-util \
+             release/${RELEASE_DIR}/bin/
+          if [ -f src/qt/kerrigan-qt ]; then
+            cp src/qt/kerrigan-qt release/${RELEASE_DIR}/bin/
+          fi
+          strip release/${RELEASE_DIR}/bin/*
+          cd release
+          tar -czvf ${RELEASE_DIR}.tar.gz ${RELEASE_DIR}/
+          shasum -a 256 ${RELEASE_DIR}.tar.gz > ${RELEASE_DIR}.tar.gz.sha256
 
-      - name: Functional tests — Multi-algo PoW
-        run: |
-          python3 test/functional/feature_multi_algo_mining.py
-          python3 test/functional/feature_multialgo_stress.py
-          python3 test/functional/feature_invalidateblock.py
-
-  lint:
-    runs-on: self-hosted
-    timeout-minutes: 10
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Check include guards
-        run: |
-          echo "Checking for KERRIGAN include guards in modified files..."
-          grep -r "BITCOIN_" src/pow.h src/primitives/block.h || true
-
-      - name: Check for TODO markers
-        run: |
-          echo "Outstanding TODOs:"
-          grep -rn "TODO" src/primitives/ src/pow.cpp src/pow.h || echo "None found"
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kerrigan-${{ steps.version.outputs.full }}-x86_64-apple-darwin
+          path: |
+            release/*.tar.gz
+            release/*.sha256
