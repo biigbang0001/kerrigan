@@ -13,7 +13,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install build dependencies
         run: brew install automake libtool pkg-config
@@ -27,7 +27,7 @@ jobs:
         run: cargo install cxxbridge-cmd --version 1.0.186
 
       - name: Cache depends
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             depends/built
@@ -49,10 +49,11 @@ jobs:
           ./configure \
             --prefix=$PWD/depends/x86_64-apple-darwin \
             --disable-tests \
-            --disable-bench
+            --disable-bench \
+            ARFLAGS="cr"
 
       - name: Build
-        run: make -j$(sysctl -n hw.ncpu)
+        run: make -j$(sysctl -n hw.ncpu) RANLIB="ranlib -no_warning_for_no_symbols"
 
       - name: Smoke test
         run: ./src/kerrigand --version
@@ -82,7 +83,7 @@ jobs:
           shasum -a 256 ${RELEASE_DIR}.tar.gz > ${RELEASE_DIR}.tar.gz.sha256
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: kerrigan-${{ steps.version.outputs.full }}-x86_64-apple-darwin
           path: |
