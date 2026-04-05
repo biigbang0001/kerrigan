@@ -50,13 +50,18 @@ jobs:
             --prefix=$PWD/depends/aarch64-apple-darwin \
             --disable-tests \
             --disable-bench \
+            --without-libs \
             ARFLAGS="cr"
 
       - name: Build
         run: make -j$(sysctl -n hw.ncpu) RANLIB="ranlib -no_warning_for_no_symbols"
 
-      - name: Smoke test
-        run: ./src/kerrigand --version
+      - name: Verify binaries
+        run: |
+          echo "=== Checking all binaries ==="
+          ls -la src/kerrigand src/kerrigan-cli src/kerrigan-tx src/kerrigan-wallet src/kerrigan-util
+          test -f src/qt/kerrigan-qt && echo "Qt wallet: OK" || { echo "ERROR: kerrigan-qt not built"; exit 1; }
+          ./src/kerrigand --version
 
       - name: Extract version
         id: version
@@ -73,10 +78,8 @@ jobs:
           mkdir -p release/${RELEASE_DIR}/bin
           cp src/kerrigand src/kerrigan-cli src/kerrigan-tx \
              src/kerrigan-wallet src/kerrigan-util \
+             src/qt/kerrigan-qt \
              release/${RELEASE_DIR}/bin/
-          if [ -f src/qt/kerrigan-qt ]; then
-            cp src/qt/kerrigan-qt release/${RELEASE_DIR}/bin/
-          fi
           strip release/${RELEASE_DIR}/bin/*
           cd release
           tar -czvf ${RELEASE_DIR}.tar.gz ${RELEASE_DIR}/
