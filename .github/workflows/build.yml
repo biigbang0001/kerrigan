@@ -10,10 +10,27 @@ jobs:
   build-macos:
     runs-on: macos-latest
     timeout-minutes: 180
+    strategy:
+      matrix:
+        arch: [arm64-apple-darwin, x86_64-apple-darwin]
+      fail-fast: false
 
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Set host triple
+        id: host
+        run: |
+          if [ "${{ matrix.arch }}" = "arm64-apple-darwin" ]; then
+            echo "triple=aarch64-apple-darwin" >> $GITHUB_OUTPUT
+            echo "rust_target=aarch64-apple-darwin" >> $GITHUB_OUTPUT
+            echo "display=arm64-apple-darwin" >> $GITHUB_OUTPUT
+          else
+            echo "triple=x86_64-apple-darwin" >> $GITHUB_OUTPUT
+            echo "rust_target=x86_64-apple-darwin" >> $GITHUB_OUTPUT
+            echo "display=x86_64-apple-darwin" >> $GITHUB_OUTPUT
+          fi
 
       - name: Install build dependencies
         run: brew install automake libtool pkg-config
@@ -22,6 +39,10 @@ jobs:
         run: |
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Add Rust cross-compile target
+        if: matrix.arch == 'x86_64-apple-darwin'
+        run: rustup target add x86_64-apple-darwin
 
       - name: Install cxxbridge
         run: cargo install cxxbridge-cmd --version 1.0.186
@@ -32,14 +53,14 @@ jobs:
           path: |
             depends/built
             depends/sources
-            depends/x86_64-apple-darwin
-          key: depends-macos-${{ hashFiles('depends/packages/*.mk') }}
-          restore-keys: depends-macos-
+            depends/${{ steps.host.outputs.triple }}
+          key: depends-macos-${{ matrix.arch }}-${{ hashFiles('depends/packages/*.mk') }}
+          restore-keys: depends-macos-${{ matrix.arch }}-
 
       - name: Build depends
         run: |
           cd depends
-          make HOST=x86_64-apple-darwin -j$(sysctl -n hw.ncpu)
+          make HOST=${{ steps.host.outputs.triple }} -j$(sysctl -n hw.ncpu)
 
       - name: Autogen
         run: ./autogen.sh
@@ -47,7 +68,7 @@ jobs:
       - name: Configure
         run: |
           ./configure \
-            --prefix=$PWD/depends/x86_64-apple-darwin \
+            --prefix=$PWD/depends/${{ steps.host.outputs.triple }} \
             --disable-tests \
             --disable-bench \
             ARFLAGS="cr"
@@ -56,6 +77,7 @@ jobs:
         run: make -j$(sysctl -n hw.ncpu) RANLIB="ranlib -no_warning_for_no_symbols"
 
       - name: Smoke test
+        if: matrix.arch == 'arm64-apple-darwin'
         run: ./src/kerrigand --version
 
       - name: Extract version
@@ -66,10 +88,11 @@ jobs:
           BUILD=$(grep '_CLIENT_VERSION_BUILD' configure.ac | head -1 | grep -o '[0-9]*')
           echo "full=${MAJOR}.${MINOR}.${BUILD}" >> $GITHUB_OUTPUT
 
-      - name: Create release package
+      - name: Create release package (tar.gz)
         run: |
           VERSION=${{ steps.version.outputs.full }}
-          RELEASE_DIR="kerrigan-${VERSION}-x86_64-apple-darwin"
+          DISPLAY=${{ steps.host.outputs.display }}
+          RELEASE_DIR="kerrigan-${VERSION}-${DISPLAY}"
           mkdir -p release/${RELEASE_DIR}/bin
           cp src/kerrigand src/kerrigan-cli src/kerrigan-tx \
              src/kerrigan-wallet src/kerrigan-util \
@@ -82,10 +105,63 @@ jobs:
           tar -czvf ${RELEASE_DIR}.tar.gz ${RELEASE_DIR}/
           shasum -a 256 ${RELEASE_DIR}.tar.gz > ${RELEASE_DIR}.tar.gz.sha256
 
-      - name: Upload artifact
+      - name: Create DMG
+        if: hashFiles('src/qt/kerrigan-qt') != ''
+        run: |
+          VERSION=${{ steps.version.outputs.full }}
+          DISPLAY=${{ steps.host.outputs.display }}
+          APP_NAME="Kerrigan-Qt"
+          DMG_NAME="kerrigan-${VERSION}-${DISPLAY}.dmg"
+          DMG_DIR="release/dmg"
+          mkdir -p "${DMG_DIR}/${APP_NAME}.app/Contents/MacOS"
+          mkdir -p "${DMG_DIR}/${APP_NAME}.app/Contents/Resources"
+          cp src/qt/kerrigan-qt "${DMG_DIR}/${APP_NAME}.app/Contents/MacOS/Kerrigan-Qt"
+          strip "${DMG_DIR}/${APP_NAME}.app/Contents/MacOS/Kerrigan-Qt"
+          if [ -f share/pixmaps/kerrigan.icns ]; then
+            cp share/pixmaps/kerrigan.icns "${DMG_DIR}/${APP_NAME}.app/Contents/Resources/kerrigan.icns"
+          fi
+          cat > "${DMG_DIR}/${APP_NAME}.app/Contents/Info.plist" << 'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleExecutable</key>
+            <string>Kerrigan-Qt</string>
+            <key>CFBundleIconFile</key>
+            <string>kerrigan.icns</string>
+            <key>CFBundleIdentifier</key>
+            <string>org.kerrigan.Kerrigan-Qt</string>
+            <key>CFBundleName</key>
+            <string>Kerrigan Core</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleShortVersionString</key>
+            <string>${{ steps.version.outputs.full }}</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>10.15</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+          </dict>
+          </plist>
+          PLIST
+          hdiutil create -volname "Kerrigan Core" -srcfolder "${DMG_DIR}" \
+            -ov -format UDZO "release/${DMG_NAME}"
+          cd release
+          shasum -a 256 ${DMG_NAME} > ${DMG_NAME}.sha256
+
+      - name: Upload tar.gz
         uses: actions/upload-artifact@v5
         with:
-          name: kerrigan-${{ steps.version.outputs.full }}-x86_64-apple-darwin
+          name: kerrigan-${{ steps.version.outputs.full }}-${{ steps.host.outputs.display }}-tar
           path: |
             release/*.tar.gz
-            release/*.sha256
+            release/*.tar.gz.sha256
+
+      - name: Upload DMG
+        if: hashFiles('release/*.dmg') != ''
+        uses: actions/upload-artifact@v5
+        with:
+          name: kerrigan-${{ steps.version.outputs.full }}-${{ steps.host.outputs.display }}-dmg
+          path: |
+            release/*.dmg
+            release/*.dmg.sha256
